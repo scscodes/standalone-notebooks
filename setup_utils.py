@@ -96,3 +96,81 @@ def plot_correlation_matrix(corr_matrix, cmap="coolwarm", annot=True):
     plt.tight_layout()
     plt.show()
 
+def plot_forecast(final_results, subject_id, metric, forecast_horizon=None):
+    """
+    Plots historical and forecasted data for a given subject and metric.
+    If forecast_horizon is specified, limits forecast data to that many days
+    after the last historical date (if historical data exists).
+
+    Parameters
+    ----------
+    final_results : pd.DataFrame
+        A DataFrame containing historical and forecasted data.
+        Expected columns: ['charttime', 'subject_id', 'metric', 'forecast',
+                           'forecast_lower', 'forecast_upper', 'row_type'].
+        'row_type' should be 'historical' or 'forecast'.
+
+    subject_id : int or str
+        The subject_id for which to plot the data.
+
+    metric : str
+        The metric to plot.
+
+    forecast_horizon : int, optional
+        Number of days of forecast data to plot beyond the last historical date.
+        If None, plots all forecasted data available.
+    """
+
+    # Filter results for the given subject_id and metric
+    df_sub = final_results[
+        (final_results['subject_id'] == subject_id) &
+        (final_results['metric'] == metric)
+        ].copy()
+
+    if df_sub.empty:
+        print(f"No data found for subject_id={subject_id}, metric={metric}")
+        return
+
+    # Sort by charttime to ensure proper temporal ordering
+    df_sub = df_sub.sort_values('charttime')
+
+    # Separate historical and forecast data
+    hist_df = df_sub[df_sub['row_type'] == 'historical']
+    fc_df = df_sub[df_sub['row_type'] == 'forecast']
+
+    if not hist_df.empty and forecast_horizon is not None:
+        # If we have historical data and a forecast horizon
+        last_hist_date = hist_df['charttime'].max()
+        cutoff_date = last_hist_date + pd.Timedelta(days=forecast_horizon)
+        fc_df = fc_df[fc_df['charttime'] <= cutoff_date]
+
+    elif hist_df.empty and forecast_horizon is not None and not fc_df.empty:
+        # If no historical data but a horizon is given
+        first_fc_date = fc_df['charttime'].min()
+        cutoff_date = first_fc_date + pd.Timedelta(days=forecast_horizon)
+        fc_df = fc_df[fc_df['charttime'] <= cutoff_date]
+
+    plt.figure(figsize=(12, 6))
+
+    # Plot historical data
+    if not hist_df.empty:
+        plt.plot(hist_df['charttime'], hist_df[metric], label='Historical', color='blue', linewidth=2)
+        # Draw a vertical line at the end of historical data (optional)
+        plt.axvline(x=hist_df['charttime'].max(), color='gray', linestyle='--', linewidth=1, label='History/Forecast Boundary')
+
+    # Plot forecasted values
+    if not fc_df.empty:
+        plt.plot(fc_df['charttime'], fc_df['forecast'], label='Forecast', color='red', linewidth=2)
+
+        # Plot the forecast confidence interval as a shaded area, if available
+        if 'forecast_lower' in fc_df.columns and 'forecast_upper' in fc_df.columns:
+            plt.fill_between(fc_df['charttime'], fc_df['forecast_lower'], fc_df['forecast_upper'],
+                             color='red', alpha=0.2, label='Confidence Interval')
+
+    plt.xlabel('Time')
+    plt.ylabel(metric.capitalize())
+    horizon_str = f" (Horizon: {forecast_horizon} days)" if forecast_horizon is not None else ""
+    plt.title(f"Subject {subject_id} - {metric.capitalize()} Forecast{horizon_str}")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
